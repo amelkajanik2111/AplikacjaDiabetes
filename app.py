@@ -48,10 +48,11 @@ with col2:
 
 # Sekcja obliczeń
 if st.button("Analizuj Ryzyko", use_container_width=True):
-    # 1. Tworzymy bazowy DataFrame z zerami dla wszystkich cech (naprawia błąd Education)
+    # 1. Tworzymy bazowy DataFrame z zerami dla WSZYSTKICH 21 cech
     df_input = pd.DataFrame(0.0, index=[0], columns=features_names)
     
-    # 2. Wypełniamy danymi z formularza
+    # 2. Wypełniamy tylko te kolumny, które mamy w formularzu
+    # Upewnij się, że nazwy w nawiasach ['...'] są identyczne jak w Twoim pliku CSV!
     df_input['HighBP'] = 1.0 if high_bp == "Tak" else 0.0
     df_input['HighChol'] = 1.0 if high_chol == "Tak" else 0.0
     df_input['BMI'] = float(bmi)
@@ -60,36 +61,38 @@ if st.button("Analizuj Ryzyko", use_container_width=True):
     df_input['PhysHlth'] = float(phys_hlth)
     df_input['MentHlth'] = float(ment_hlth)
     df_input['Income'] = float(income)
-    df_input['HeartDiseaseorAttack'] = 1.0 if heart_disease == "Tak" else 0.0
-    df_input['PhysActivity'] = 1.0 if phys_activity == "Tak" else 0.0
     
-    # Uwaga: Cechy których nie ma w formularzu (Smoker, Education itp.) zostają jako 0.0.
-    # Zapobiega to błędowi "missing features" przy skalowaniu i predykcji.
+    # Dodajmy te, które wymienił błąd, aby były zainicjalizowane:
+    if 'HeartDiseaseorAttack' in features_names:
+        df_input['HeartDiseaseorAttack'] = 1.0 if heart_disease == "Tak" else 0.0
+    if 'PhysActivity' in features_names:
+        df_input['PhysActivity'] = 1.0 if phys_activity == "Tak" else 0.0
 
     try:
-        # 3. Skalowanie danych (musimy podać pełną macierz, bo tak był trenowany skaler)
-        df_scaled = scaler.transform(df_input)
+        # KLUCZOWE: Skaler w Twoim projekcie był trenowany na nazwach cech.
+        # Musimy upewnić się, że kolejność kolumn w df_input jest IDENTYCZNA jak w features_names.
+        df_input = df_input[features_names]
         
-        # 4. Predykcja prawdopodobieństwa
-        # Używamy DataFrame z nazwami kolumn, aby XGBoost był "szczęśliwy"
-        df_final = pd.DataFrame(df_scaled, columns=features_names)
+        # 3. Skalowanie
+        # Transformacja zwraca tablicę numpy, więc musimy ją zamienić z powrotem na DataFrame z nazwami
+        scaled_data = scaler.transform(df_input)
+        df_final = pd.DataFrame(scaled_data, columns=features_names)
+        
+        # 4. Predykcja
         prob = model.predict_proba(df_final)[0][1]
         prediction = model.predict(df_final)[0]
         
         # 5. Wyświetlanie wyników
         st.markdown("---")
-        st.subheader("Wynik Analizy:")
-        
         if prediction == 1:
             st.error(f"⚠️ **WYSOKIE RYZYKO CUKRZYCY**")
             st.metric("Prawdopodobieństwo", f"{prob:.2%}")
-            st.warning("Model sugeruje konsultację z lekarzem i wykonanie badań diagnostycznych.")
         else:
             st.success(f"✅ **NISKIE RYZYKO CUKRZYCY**")
             st.metric("Prawdopodobieństwo", f"{prob:.2%}")
-            st.write("Twój wynik mieści się w normie według modelu przesiewowego.")
             
-        st.info("Pamiętaj: Czułość tego modelu wynosi ok. 79%, co oznacza, że jest on bardzo dobry w wykrywaniu potencjalnych chorych (screening).")
+        st.info("Wynik na podstawie modelu XGBoost (Recall: 79%).")
 
     except Exception as e:
-        st.error(f"Wystąpił błąd podczas obliczeń: {e}")
+        st.error(f"Błąd dopasowania danych: {e}")
+        st.write("Wymagane kolumny przez model:", features_names)
