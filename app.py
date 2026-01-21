@@ -1,98 +1,63 @@
 import streamlit as st
+import pandas as pd
 import joblib
 import numpy as np
-import pandas as pd
-import xgboost as xgb
 
 # Konfiguracja strony
-st.set_page_config(page_title="Diagnostyka Cukrzycy AI", layout="centered", page_icon="🩺")
+st.set_page_config(page_title="Predykcja Ryzyka Cukrzycy", layout="centered")
 
-# Funkcja ładowania modeli i list (z cache, aby nie wczytywać ich przy każdym kliknięciu)
 @st.cache_resource
 def load_assets():
+    # Ładowanie modelu, skalera i listy cech
     model = joblib.load('diabetes_model.pkl')
     scaler = joblib.load('scaler.pkl')
-    features_names = joblib.load('features_list.pkl')
-    return model, scaler, features_names
+    features = joblib.load('features_list.pkl')
+    return model, scaler, features
 
-# Spróbuj załadować pliki
 try:
-    model, scaler, features_names = load_assets()
+    model, scaler, features = load_assets()
 except Exception as e:
-    st.error(f"Błąd ładowania plików modelu: {e}")
-    st.info("Upewnij się, że pliki .pkl znajdują się w tym samym folderze na GitHubie co app.py.")
+    st.error("Błąd ładowania plików modelu. Upewnij się, że .pkl są w tym samym folderze.")
     st.stop()
 
-st.title("🩺 Inteligentny Asystent Ryzyka Cukrzycy")
-st.write("Aplikacja analizuje czynniki ryzyka na podstawie modelu XGBoost wytrenowanego na 250 000 rekordach.")
+st.title("🩺 Asystent Diagnostyki Cukrzycy")
+st.write("Wprowadź dane pacjenta, aby ocenić ryzyko wystąpienia cukrzycy.")
 
-st.markdown("---")
-
-# Formularz użytkownika
-st.subheader("Wprowadź dane pacjenta")
-col1, col2 = st.columns(2)
-
-with col1:
-    high_bp = st.selectbox("Wysokie ciśnienie krwi?", ["Nie", "Tak"])
-    high_chol = st.selectbox("Wysoki cholesterol?", ["Nie", "Tak"])
-    bmi = st.number_input("BMI (wskaźnik masy ciała)", min_value=10.0, max_value=80.0, value=25.0)
-    age = st.slider("Wiek (1=18-24, ..., 13=80+)", 1, 13, 8)
-    heart_disease = st.selectbox("Choroba wieńcowa/Zawał?", ["Nie", "Tak"])
-
-with col2:
-    gen_hlth = st.slider("Ogólny stan zdrowia (1-świetny, 5-zły)", 1, 5, 3)
-    phys_hlth = st.number_input("Dni złego stanu fizycznego (ostatni miesiąc)", 0, 30, 0)
-    ment_hlth = st.number_input("Dni złego stanu psychicznego (ostatni miesiąc)", 0, 30, 0)
-    income = st.slider("Poziom dochodów (skala 1-8)", 1, 8, 5)
-    phys_activity = st.selectbox("Aktywność fizyczna w ost. 30 dniach?", ["Tak", "Nie"])
-
-# Sekcja obliczeń
-if st.button("Analizuj Ryzyko", use_container_width=True):
-    # 1. Tworzymy bazowy DataFrame z zerami dla WSZYSTKICH 21 cech
-    df_input = pd.DataFrame(0.0, index=[0], columns=features_names)
+# Tworzenie formularza z polami na podstawie Twojego datasetu
+with st.form("diabetes_form"):
+    st.subheader("Dane zdrowotne i styl życia")
     
-    # 2. Wypełniamy tylko te kolumny, które mamy w formularzu
-    # Upewnij się, że nazwy w nawiasach ['...'] są identyczne jak w Twoim pliku CSV!
-    df_input['HighBP'] = 1.0 if high_bp == "Tak" else 0.0
-    df_input['HighChol'] = 1.0 if high_chol == "Tak" else 0.0
-    df_input['BMI'] = float(bmi)
-    df_input['Age'] = float(age)
-    df_input['GenHlth'] = float(gen_hlth)
-    df_input['PhysHlth'] = float(phys_hlth)
-    df_input['MentHlth'] = float(ment_hlth)
-    df_input['Income'] = float(income)
+    col1, col2 = st.columns(2)
     
-    # Dodajmy te, które wymienił błąd, aby były zainicjalizowane:
-    if 'HeartDiseaseorAttack' in features_names:
-        df_input['HeartDiseaseorAttack'] = 1.0 if heart_disease == "Tak" else 0.0
-    if 'PhysActivity' in features_names:
-        df_input['PhysActivity'] = 1.0 if phys_activity == "Tak" else 0.0
+    with col1:
+        bmi = st.number_input("BMI", min_value=10.0, max_value=60.0, value=25.0)
+        age = st.slider("Wiek (grupa 1-13)", 1, 13, 5)
+        high_bp = st.selectbox("Wysokie ciśnienie?", [0, 1], format_func=lambda x: "Tak" if x==1 else "Nie")
+        high_chol = st.selectbox("Wysoki cholesterol?", [0, 1], format_func=lambda x: "Tak" if x==1 else "Nie")
+        
+    with col2:
+        gen_hlth = st.slider("Ogólne zdrowie (1-5)", 1, 5, 3)
+        phys_act = st.selectbox("Aktywność fizyczna?", [0, 1], format_func=lambda x: "Tak" if x==1 else "Nie")
+        smoker = st.selectbox("Palacz?", [0, 1], format_func=lambda x: "Tak" if x==1 else "Nie")
+        sex = st.selectbox("Płeć", [0, 1], format_func=lambda x: "Mężczyzna" if x==1 else "Kobieta")
 
-    try:
-        # KLUCZOWE: Skaler w Twoim projekcie był trenowany na nazwach cech.
-        # Musimy upewnić się, że kolejność kolumn w df_input jest IDENTYCZNA jak w features_names.
-        df_input = df_input[features_names]
-        
-        # 3. Skalowanie
-        # Transformacja zwraca tablicę numpy, więc musimy ją zamienić z powrotem na DataFrame z nazwami
-        scaled_data = scaler.transform(df_input)
-        df_final = pd.DataFrame(scaled_data, columns=features_names)
-        
-        # 4. Predykcja
-        prob = model.predict_proba(df_final)[0][1]
-        prediction = model.predict(df_final)[0]
-        
-        # 5. Wyświetlanie wyników
-        st.markdown("---")
-        if prediction == 1:
-            st.error(f"⚠️ **WYSOKIE RYZYKO CUKRZYCY**")
-            st.metric("Prawdopodobieństwo", f"{prob:.2%}")
-        else:
-            st.success(f"✅ **NISKIE RYZYKO CUKRZYCY**")
-            st.metric("Prawdopodobieństwo", f"{prob:.2%}")
-            
-        st.info("Wynik na podstawie modelu XGBoost (Recall: 79%).")
+    # Dodaj resztę brakujących cech z domyślnymi wartościami (lub stwórz dla nich pola)
+    # W Twoim projekcie jest 21 cech wejściowych
+    submit = st.form_submit_button("Analizuj ryzyko")
 
-    except Exception as e:
-        st.error(f"Błąd dopasowania danych: {e}")
-        st.write("Wymagane kolumny przez model:", features_names)
+if submit:
+    # Przygotowanie danych do predykcji
+    # Uwaga: Musisz przekazać WSZYSTKIE cechy w kolejności z features_list.pkl
+    input_data = pd.DataFrame([[high_bp, high_chol, 1, bmi, smoker, 0, 0, phys_act, 1, 1, 0, 1, 0, gen_hlth, 0, 0, 0, sex, age, 4, 5]], 
+                              columns=features)
+    
+    # Skalowanie i predykcja
+    scaled_data = scaler.transform(input_data)
+    prediction = model.predict(scaled_data)[0]
+    probability = model.predict_proba(scaled_data)[0][1]
+
+    st.divider()
+    if prediction == 1:
+        st.error(f"⚠️ Wysokie ryzyko cukrzycy! (Prawdopodobieństwo: {probability:.2%})")
+    else:
+        st.success(f"✅ Niskie ryzyko cukrzycy. (Prawdopodobieństwo: {probability:.2%})")
