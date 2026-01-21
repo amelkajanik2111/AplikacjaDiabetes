@@ -47,19 +47,39 @@ input_dict['MentHlth'] = ment_hlth
 input_dict['Income'] = income
 
 if st.button("Analizuj Ryzyko"):
-    df_input = pd.DataFrame([input_dict])
+    # 1. Tworzymy pusty DataFrame z poprawnymi nazwami kolumn i kolejnością
+    # features_names to lista pobrana z features_list.pkl
+    df_input = pd.DataFrame(0, index=[0], columns=features_names)
     
-    # Skalowanie cech ciągłych (tych samych co w Twoim projekcie)
+    # 2. Wypełniamy tylko te kolumny, które mamy z formularza
+    df_input['HighBP'] = 1 if high_bp == "Tak" else 0
+    df_input['HighChol'] = 1 if high_chol == "Tak" else 0
+    df_input['BMI'] = bmi
+    df_input['Age'] = age
+    df_input['GenHlth'] = gen_hlth
+    df_input['PhysHlth'] = phys_hlth
+    df_input['MentHlth'] = ment_hlth
+    df_input['Income'] = income
+    
+    # Uwaga: Pozostałe kolumny (jak Education, Smoker itp.) mają teraz wartość 0.
+    # Dzięki temu model nie zgłosi błędu o braku cech.
+
+    # 3. Skalowanie cech ciągłych
     cont_feats = ['BMI', 'GenHlth', 'MentHlth', 'PhysHlth', 'Age', 'Income']
+    
+    # Sprawdzamy, czy wszystkie cont_feats są w naszym DataFrame (dla bezpieczeństwa)
     df_input[cont_feats] = scaler.transform(df_input[cont_feats])
     
-    # Predykcja
+    # 4. Wymuszenie kolejności kolumn dokładnie tak, jak przy treningu (KLUCZOWE)
+    df_input = df_input[features_names]
+    
+    # 5. Predykcja
     prob = model.predict_proba(df_input)[0][1]
     prediction = model.predict(df_input)[0]
     
     st.divider()
     if prediction == 1:
         st.error(f"⚠️ WYSOKIE RYZYKO: Prawdopodobieństwo wynosi {prob:.2%}")
-        st.write("Model sugeruje konsultację lekarską. Pamiętaj, że czułość modelu wynosi ok. 79%.")
+        st.write("Model sugeruje konsultację lekarską.")
     else:
         st.success(f"✅ NISKIE RYZYKO: Prawdopodobieństwo wynosi {prob:.2%}")
